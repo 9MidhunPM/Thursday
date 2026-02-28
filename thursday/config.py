@@ -1,9 +1,15 @@
 """
 Configuration constants for Thursday AI assistant.
-All tunables in one place. Modify as needed.
+All tunables in one place.  Secrets and paths are loaded from ../.env
 """
 
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from project root (one level above this package)
+_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(_ENV_PATH)
 
 # --- Paths ---
 BASE_DIR = Path(__file__).parent
@@ -11,13 +17,15 @@ PERSONALITY_FILE = BASE_DIR / "personality.txt"
 DB_FILE = BASE_DIR / "thursday.db"
 
 # --- LLM Server ---
-API_BASE_URL = "http://localhost:8080"
+LLAMA_HOST = os.getenv("LLAMA_HOST", "127.0.0.1")
+LLAMA_PORT = int(os.getenv("LLAMA_PORT", "8080"))
+API_BASE_URL = f"http://{LLAMA_HOST}:{LLAMA_PORT}"
 CHAT_ENDPOINT = f"{API_BASE_URL}/v1/chat/completions"
 
 # --- Model parameters ---
-MODEL_NAME = "llama-3-8b-instruct"  # label only, server already has model loaded
-TEMPERATURE = 0.7
-MAX_TOKENS = 512
+MODEL_NAME = os.getenv("MODEL_NAME", "llama-3-8b-instruct")
+TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "512"))
 TOP_P = 0.9
 
 # --- Memory ---

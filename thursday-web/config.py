@@ -1,9 +1,15 @@
 """
 Configuration constants for Thursday Web.
-All tunables in one place.
+All tunables in one place.  Secrets and paths are loaded from ../.env
 """
 
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from project root (one level above this package)
+_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(_ENV_PATH)
 
 # --- Paths ---
 BASE_DIR = Path(__file__).parent
@@ -11,7 +17,9 @@ PERSONALITY_FILE = BASE_DIR / "personality.txt"
 DB_FILE = BASE_DIR / "thursday.db"
 
 # --- LLM Server (llama-server) ---
-LLAMA_BASE_URL = "http://localhost:8080"
+LLAMA_HOST = os.getenv("LLAMA_HOST", "127.0.0.1")
+LLAMA_PORT = int(os.getenv("LLAMA_PORT", "8080"))
+LLAMA_BASE_URL = f"http://{LLAMA_HOST}:{LLAMA_PORT}"
 LLAMA_CHAT_ENDPOINT = f"{LLAMA_BASE_URL}/v1/chat/completions"
 
 # --- Proxy server ---
@@ -19,9 +27,9 @@ PROXY_HOST = "0.0.0.0"
 PROXY_PORT = 5000
 
 # --- Model parameters ---
-MODEL_NAME = "llama-3-8b-instruct"
-TEMPERATURE = 0.7
-MAX_TOKENS = 512
+MODEL_NAME = os.getenv("MODEL_NAME", "llama-3-8b-instruct")
+TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "512"))
 TOP_P = 0.9
 
 # --- Memory ---
@@ -49,6 +57,6 @@ MEMORY_TRIGGER_PREFIXES = [
 ]
 
 # --- Discord / Reminders ---
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1473211981849956514/BNjMMxE6BHlkLVvE1Lu2P1R892DL7iax9H4W3A9vH2bh7Dz6-YafP6RYfQwoMCHq9UCt"
-DISCORD_USER_ID = "789374384136519690"
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
+DISCORD_USER_ID = os.getenv("DISCORD_USER_ID", "")
 REMINDER_CHECK_INTERVAL = 10  # seconds between due-reminder checks
