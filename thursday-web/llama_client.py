@@ -173,6 +173,39 @@ class LlamaClient:
             yield f"data: {json.dumps(_make_error_chunk('Request timed out.'))}\n\n", collected
             yield "data: [DONE]\n\n", collected
 
+    def blocking_chat(
+        self,
+        messages: list[dict],
+        temperature: float = TEMPERATURE,
+        max_tokens: int = MAX_TOKENS,
+    ) -> str:
+        """Non-streaming chat — returns the full reply as a string.
+
+        Used by the WhatsApp webhook where we need the complete response
+        before replying.
+        """
+        payload = {
+            "model": MODEL_NAME,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "top_p": TOP_P,
+            "stream": False,
+        }
+        try:
+            resp = self._session.post(
+                self._endpoint, json=payload, timeout=self._timeout
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"].strip()
+        except requests.ConnectionError:
+            return "\u26a0\ufe0f I'm currently offline. Please try again later."
+        except requests.Timeout:
+            return "\u26a0\ufe0f Taking too long — try again in a moment."
+        except Exception as exc:
+            return f"\u26a0\ufe0f Something went wrong: {exc}"
+
     def close(self) -> None:
         self._session.close()
 

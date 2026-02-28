@@ -70,8 +70,9 @@ class MemoryStore:
 
     # ---- Conversations ----
 
-    def create_conversation(self, title: str = "New Chat") -> dict:
-        conv_id = uuid.uuid4().hex[:12]
+    def create_conversation(self, title: str = "New Chat", conv_id: str | None = None) -> dict:
+        if conv_id is None:
+            conv_id = uuid.uuid4().hex[:12]
         now = time.time()
         self._conn.execute(
             "INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",

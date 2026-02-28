@@ -144,13 +144,6 @@ ThursdayV2/
 │   ├── personality.txt    # Editable personality definition
 │   └── requirements.txt   # Python dependencies
 │
-├── whatsapp-demo/         # Exhibition demo — WhatsApp AI via Twilio
-│   ├── main.py            # FastAPI webhook server
-│   ├── requirements.txt   # Python dependencies
-│   ├── start-demo.bat     # One-click server start
-│   ├── start-ngrok.bat    # One-click ngrok start
-│   └── README.md          # Full setup guide
-│
 └── llama.cpp/             # Runtime only (source not included)
     ├── LICENSE
     ├── README.md           # Setup instructions for binaries
@@ -167,6 +160,7 @@ ThursdayV2/
 - **Conversation management** — create, rename, delete conversations (Web UI)
 - **Streaming responses** — real-time token-by-token output
 - **Discord reminders** — set timed reminders that ping you via webhook
+- **WhatsApp chat** — full Thursday experience via WhatsApp (Twilio + ngrok)
 - **WhatsApp reminders** — optional Twilio-powered WhatsApp notifications with automatic fallback
 - **Customisable personality** — edit `personality.txt` to change how Thursday talks
 - **GPU accelerated** — Vulkan backend with KV-cache quantisation
@@ -229,6 +223,51 @@ Or just run `pip install -r thursday-web/requirements.txt` — twilio is already
 
 When a reminder fires, Thursday sends notifications to **both** Discord and WhatsApp (if configured).  
 If one channel fails, the other still delivers. If WhatsApp is not configured, it silently skips it.
+
+---
+
+## WhatsApp Chat via Twilio + ngrok (Optional)
+
+Chat with the **full Thursday** (same personality, memory, reminders) over WhatsApp.
+
+### Prerequisites
+
+- Twilio WhatsApp Sandbox set up (see above)
+- [ngrok](https://ngrok.com/) installed
+
+### Setup (one-time)
+
+1. Start Thursday Web as usual (`python main.py` in `thursday-web/`)
+2. In a separate terminal, start ngrok:
+   ```powershell
+   ngrok http 5000
+   ```
+3. Copy the `https://` URL from ngrok (e.g. `https://abc123.ngrok-free.app`)
+4. Go to [Twilio Console → WhatsApp Sandbox](https://console.twilio.com/us1/develop/sms/try-it-out/whatsapp-learn)
+5. Under **Sandbox Configuration**, set:
+   - **When a message comes in**: `https://YOUR-NGROK-URL.ngrok-free.app/whatsapp`
+   - **Method**: `POST`
+6. Click **Save**
+7. Send any message from WhatsApp → Thursday replies with full memory + personality!
+
+### How it works
+
+```
+WhatsApp → Twilio → ngrok → POST /whatsapp → Thursday (memory + personality + LLM) → TwiML → WhatsApp
+```
+
+- Uses the **same database** as the Web UI (shared memory, facts, reminders)
+- WhatsApp messages appear in a dedicated "WhatsApp" conversation
+- Reminders set via WhatsApp also fire as Discord/WhatsApp notifications
+- To stop: close ngrok (`Ctrl+C`). Thursday Web keeps running for the browser UI.
+
+### Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| No reply on WhatsApp | Check ngrok is running and URL is in Twilio sandbox |
+| ngrok expired | Restart ngrok, update Twilio webhook URL |
+| Slow responses | Normal — local LLM takes 5-30s depending on GPU |
 
 ---
 
