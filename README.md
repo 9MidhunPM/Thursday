@@ -144,6 +144,13 @@ ThursdayV2/
 │   ├── personality.txt    # Editable personality definition
 │   └── requirements.txt   # Python dependencies
 │
+├── whatsapp-demo/         # Exhibition demo — WhatsApp AI via Twilio
+│   ├── main.py            # FastAPI webhook server
+│   ├── requirements.txt   # Python dependencies
+│   ├── start-demo.bat     # One-click server start
+│   ├── start-ngrok.bat    # One-click ngrok start
+│   └── README.md          # Full setup guide
+│
 └── llama.cpp/             # Runtime only (source not included)
     ├── LICENSE
     ├── README.md           # Setup instructions for binaries
