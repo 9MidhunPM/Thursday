@@ -25,9 +25,8 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Optional
 
-import requests
-
-from config import DISCORD_WEBHOOK_URL, DISCORD_USER_ID
+from config import DISCORD_USER_ID
+from notifier import notify, send_discord
 
 
 # ------------------------------------------------------------------
@@ -265,44 +264,42 @@ def strip_reminder_tags(text: str) -> str:
 
 
 # ------------------------------------------------------------------
-# Discord webhook
+# Notifications (delegated to notifier module)
 # ------------------------------------------------------------------
 
-def send_discord_message(content: str) -> bool:
-    """Send a message via Discord webhook. Returns True on success."""
-    if not DISCORD_WEBHOOK_URL:
-        print("[Reminder] No Discord webhook URL configured, skipping.")
-        return False
-    try:
-        r = requests.post(
-            DISCORD_WEBHOOK_URL,
-            json={"content": content, "username": "Thursday AI"},
-            timeout=10,
-        )
-        return r.status_code in (200, 204)
-    except Exception as e:
-        print(f"[Reminder] Discord webhook error: {e}")
-        return False
-
-
 def send_reminder_set_notification(message: str, trigger_at: float) -> bool:
-    """Notify via Discord that a reminder has been set."""
+    """Notify all configured channels that a reminder has been set."""
     ts = int(trigger_at)
-    content = (
-        f"⏰ **Reminder Set!**\n"
-        f"📝 {message}\n"
-        f"🕐 Scheduled for: <t:{ts}:F> (<t:{ts}:R>)"
+    discord_content = (
+        f"\u23f0 **Reminder Set!**\n"
+        f"\U0001f4dd {message}\n"
+        f"\U0001f550 Scheduled for: <t:{ts}:F> (<t:{ts}:R>)"
     )
-    return send_discord_message(content)
+    whatsapp_content = (
+        f"\u23f0 Reminder Set!\n"
+        f"{message}\n"
+        f"Fires at: {datetime.fromtimestamp(trigger_at).strftime('%I:%M %p on %B %d')}"
+    )
+    d = send_discord(discord_content)
+    from notifier import send_whatsapp
+    w = send_whatsapp(whatsapp_content)
+    return d or w
 
 
 def send_reminder_fire_notification(message: str) -> bool:
-    """Notify via Discord that a reminder is due — pings the user."""
-    content = (
-        f"🔔 <@{DISCORD_USER_ID}> **Time's up!**\n"
-        f"📝 {message}"
+    """Notify all configured channels that a reminder is due."""
+    discord_content = (
+        f"\U0001f514 <@{DISCORD_USER_ID}> **Time's up!**\n"
+        f"\U0001f4dd {message}"
     )
-    return send_discord_message(content)
+    whatsapp_content = (
+        f"\U0001f514 Time's up!\n"
+        f"{message}"
+    )
+    d = send_discord(discord_content)
+    from notifier import send_whatsapp
+    w = send_whatsapp(whatsapp_content)
+    return d or w
 
 
 # ------------------------------------------------------------------

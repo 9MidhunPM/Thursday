@@ -60,3 +60,9 @@ MEMORY_TRIGGER_PREFIXES = [
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 DISCORD_USER_ID = os.getenv("DISCORD_USER_ID", "")
 REMINDER_CHECK_INTERVAL = 10  # seconds between due-reminder checks
+
+# --- Twilio / WhatsApp ---
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_WHATSAPP_FROM = os.getenv("TWILIO_WHATSAPP_FROM", "")
+TWILIO_WHATSAPP_TO = os.getenv("TWILIO_WHATSAPP_TO", "")

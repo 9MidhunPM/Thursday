@@ -264,7 +264,7 @@ def _build_thursday_messages(
         dt = datetime.fromtimestamp(reminder_just_set.trigger_at)
         system_parts.append(
             f"IMPORTANT: A reminder was just created: \"{reminder_just_set.message}\" "
-            f"scheduled for {dt.strftime('%I:%M %p')}. A Discord notification was sent. "
+            f"scheduled for {dt.strftime('%I:%M %p')}. Notifications were sent. "
             f"Briefly confirm this to the user."
         )
 

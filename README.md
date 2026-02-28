@@ -1,7 +1,7 @@
 # Thursday — Local AI Assistant
 
 A personal AI assistant powered by [llama.cpp](https://github.com/ggerganov/llama.cpp), running entirely on your own hardware.  
-Comes in two flavours: a **CLI** chat and a **Web UI** with conversations, memory, and Discord reminder notifications.
+Comes in two flavours: a **CLI** chat and a **Web UI** with conversations, memory, and multi-channel notifications (Discord + WhatsApp).
 
 ---
 
@@ -124,7 +124,8 @@ ThursdayV2/
 │   ├── llama_client.py    # HTTP client for llama-server
 │   ├── memory.py          # SQLite short + long-term memory
 │   ├── personality.py     # System prompt loader
-│   ├── reminder.py        # Reminder system + Discord notifications
+│   ├── reminder.py        # Reminder system + notification triggers
+│   ├── notifier.py        # Unified notifications (Discord + WhatsApp)
 │   ├── config.py          # Configuration (reads .env)
 │   ├── personality.txt    # Editable personality definition
 │   ├── requirements.txt   # Python dependencies
@@ -159,6 +160,7 @@ ThursdayV2/
 - **Conversation management** — create, rename, delete conversations (Web UI)
 - **Streaming responses** — real-time token-by-token output
 - **Discord reminders** — set timed reminders that ping you via webhook
+- **WhatsApp reminders** — optional Twilio-powered WhatsApp notifications with automatic fallback
 - **Customisable personality** — edit `personality.txt` to change how Thursday talks
 - **GPU accelerated** — Vulkan backend with KV-cache quantisation
 
@@ -170,6 +172,56 @@ ThursdayV2/
 2. Copy the webhook URL into `DISCORD_WEBHOOK_URL` in `.env`
 3. Put your Discord user ID in `DISCORD_USER_ID` (for @mentions)
 4. In the chat, say something like *"remind me to check the build in 30 minutes"*
+
+---
+
+## WhatsApp Notifications via Twilio (Optional)
+
+### 1. Create a Twilio account
+
+- Sign up at [twilio.com](https://www.twilio.com/)
+- From the console, note your **Account SID** and **Auth Token**
+
+### 2. Set up the WhatsApp Sandbox
+
+- Go to **Messaging → Try it out → Send a WhatsApp message**
+- Follow the instructions to join the sandbox (send a code from your phone to the Twilio number)
+- Note the sandbox number (e.g. `+14155238886`)
+
+### 3. Add credentials to `.env`
+
+```env
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=your_auth_token_here
+TWILIO_WHATSAPP_FROM=+14155238886
+TWILIO_WHATSAPP_TO=+1XXXXXXXXXX
+```
+
+| Variable | Description |
+|---|---|
+| `TWILIO_ACCOUNT_SID` | Your Twilio Account SID (starts with `AC`) |
+| `TWILIO_AUTH_TOKEN` | Your Twilio Auth Token |
+| `TWILIO_WHATSAPP_FROM` | Twilio sandbox/sender number (include `+` and country code) |
+| `TWILIO_WHATSAPP_TO` | Your personal phone number (include `+` and country code) |
+
+### 4. Install the SDK
+
+**Windows (PowerShell):**
+```powershell
+pip install twilio
+```
+
+**Linux / macOS:**
+```bash
+pip install twilio
+```
+
+Or just run `pip install -r thursday-web/requirements.txt` — twilio is already included.
+
+### 5. How it works
+
+When a reminder fires, Thursday sends notifications to **both** Discord and WhatsApp (if configured).  
+If one channel fails, the other still delivers. If WhatsApp is not configured, it silently skips it.
 
 ---
 
@@ -188,6 +240,10 @@ All settings live in `.env` at the project root. Both `thursday/` and `thursday-
 | `MAX_TOKENS` | `512` | Max tokens per response |
 | `DISCORD_WEBHOOK_URL` | *(empty)* | Discord webhook for reminders |
 | `DISCORD_USER_ID` | *(empty)* | Your Discord ID for @mentions |
+| `TWILIO_ACCOUNT_SID` | *(empty)* | Twilio Account SID |
+| `TWILIO_AUTH_TOKEN` | *(empty)* | Twilio Auth Token |
+| `TWILIO_WHATSAPP_FROM` | *(empty)* | Twilio sandbox/sender number |
+| `TWILIO_WHATSAPP_TO` | *(empty)* | Your WhatsApp phone number |
 
 ---
 
