@@ -1,0 +1,4 @@
+# Thursday — Local AI Assistant
+#
+# Only runtime dependency beyond the standard library.
+requests>=2.31.0
