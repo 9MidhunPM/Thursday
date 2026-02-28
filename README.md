@@ -20,7 +20,7 @@ Comes in two flavours: a **CLI** chat and a **Web UI** with conversations, memor
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/<your-username>/ThursdayV2.git
+git clone https://github.com/9MidhunPM/ThursdayV2.git
 cd ThursdayV2
 ```
 
