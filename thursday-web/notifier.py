@@ -77,6 +77,36 @@ def send_discord(message: str, *, username: str = "Thursday AI") -> bool:
 # WhatsApp (Twilio)
 # ---------------------------------------------------------------------------
 
+def _split_message(text: str, limit: int = 1500) -> list[str]:
+    """Split *text* into chunks of at most *limit* characters.
+
+    Tries to break at newlines first, then at spaces, to avoid
+    cutting code blocks or sentences in the middle of a word.
+    """
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= limit:
+            chunks.append(remaining)
+            break
+
+        # Try to split at the last newline within the limit
+        idx = remaining.rfind("\n", 0, limit)
+        if idx == -1:
+            # Fall back to the last space
+            idx = remaining.rfind(" ", 0, limit)
+        if idx == -1:
+            # No good break point — hard cut
+            idx = limit
+
+        chunks.append(remaining[:idx])
+        remaining = remaining[idx:].lstrip("\n")  # drop the split newline
+    return chunks
+
+
 def send_whatsapp(message: str) -> bool:
     """Send a WhatsApp message via Twilio.  Returns True on success."""
     if not whatsapp_configured():
@@ -91,8 +121,47 @@ def send_whatsapp(message: str) -> bool:
             from_=f"whatsapp:{TWILIO_WHATSAPP_FROM}",
             to=f"whatsapp:{TWILIO_WHATSAPP_TO}",
         )
-        log.info("WhatsApp message sent — SID: %s", msg.sid)
         return True
+    except Exception as exc:
+        log.error("WhatsApp (Twilio) error: %s", exc)
+        return False
+
+
+def send_whatsapp_long(message: str) -> bool:
+    """Send a long WhatsApp message, splitting into multiple parts if needed.
+
+    Each Twilio WhatsApp message is limited to ~1600 chars.  This function
+    splits the message at line/word boundaries and sends each chunk in order.
+    Returns True if ALL parts were delivered.
+    """
+    if not whatsapp_configured():
+        log.warning("Twilio WhatsApp not configured — skipping.")
+        return False
+
+    chunks = _split_message(message, limit=1500)
+
+    try:
+        from twilio.rest import Client
+        import time as _time
+
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        all_ok = True
+        for i, chunk in enumerate(chunks, 1):
+            label = f"({i}/{len(chunks)}) " if len(chunks) > 1 else ""
+            body = f"{label}{chunk}" if label else chunk
+            try:
+                client.messages.create(
+                    body=body,
+                    from_=f"whatsapp:{TWILIO_WHATSAPP_FROM}",
+                    to=f"whatsapp:{TWILIO_WHATSAPP_TO}",
+                )
+            except Exception as exc:
+                log.error("WhatsApp part %d/%d failed: %s", i, len(chunks), exc)
+                all_ok = False
+            # Small delay between parts so they arrive in order
+            if i < len(chunks):
+                _time.sleep(1)
+        return all_ok
     except Exception as exc:
         log.error("WhatsApp (Twilio) error: %s", exc)
         return False

@@ -26,11 +26,12 @@ import sys
 import os
 import asyncio
 import logging
+import time as _time
 from contextlib import asynccontextmanager
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fastapi import FastAPI, Form, Response
+from fastapi import BackgroundTasks, FastAPI, Form, Response
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,6 +54,25 @@ from reminder import (
 
 
 # ------------------------------------------------------------------
+# Logging setup
+# ------------------------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(message)s",
+    datefmt="%H:%M:%S",
+)
+# Suppress noisy uvicorn access logs for /health
+logging.getLogger("uvicorn.access").addFilter(
+    type("HealthFilter", (logging.Filter,), {
+        "filter": staticmethod(lambda r: "/health" not in r.getMessage())
+    })()
+)
+# Suppress Twilio SDK request/response logging
+logging.getLogger("twilio.http_client").setLevel(logging.WARNING)
+log = logging.getLogger("thursday")
+
+# ------------------------------------------------------------------
 # App setup
 # ------------------------------------------------------------------
 
@@ -70,13 +90,13 @@ async def _reminder_check_loop():
             await asyncio.sleep(REMINDER_CHECK_INTERVAL)
             due = reminders.get_due_reminders()
             for r in due:
-                print(f"[Reminder] Firing reminder #{r.id}: {r.message}")
+                log.info("⏰  Reminder #%d fired: %s", r.id, r.message)
                 send_reminder_fire_notification(r.message)
                 reminders.mark_fired(r.id)
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"[Reminder] Error in check loop: {e}")
+            log.error("Reminder loop error: %s", e)
 
 
 @asynccontextmanager
@@ -86,15 +106,16 @@ async def lifespan(app: FastAPI):
     memory = MemoryStore()
     personality = Personality()
     reminders = ReminderStore(str(DB_FILE))
-    print(f"[Thursday Web] Server starting on http://localhost:{PROXY_PORT}")
+    log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    log.info("  Thursday Web starting on http://localhost:%d", PROXY_PORT)
+    log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     if llama.health_check():
-        print("[Thursday Web] ✓ Connected to llama-server")
+        log.info("✓  LLM server connected")
     else:
-        print("[Thursday Web] ✗ llama-server not reachable — start it first")
+        log.warning("✗  LLM server not reachable — start it first")
 
-    # Start background reminder checker
     _reminder_task = asyncio.create_task(_reminder_check_loop())
-    print(f"[Thursday Web] ✓ Reminder checker started (every {REMINDER_CHECK_INTERVAL}s)")
+    log.info("✓  Reminder checker started (every %ds)", REMINDER_CHECK_INTERVAL)
 
     yield
 
@@ -170,6 +191,9 @@ def _thursday_stream(
 ) -> StreamingResponse:
     user_msg = messages[-1]["content"] if messages else ""
     conv_id = conversation_id
+    t0 = _time.time()
+
+    log.info("── Web prompt received (%d chars): %s", len(user_msg), user_msg[:80])
 
     # Step 1: extract long-term facts
     memory.try_extract_fact(user_msg)
@@ -182,7 +206,7 @@ def _thursday_stream(
         trigger_at = parse_time_expression(time_expr)
         if trigger_at:
             reminder_created = reminders.add_reminder(reminder_message, trigger_at, conv_id)
-            print(f"[Reminder] Created #{reminder_created.id}: '{reminder_message}' → fires in {trigger_at - __import__('time').time():.0f}s")
+            log.info("   ⏰ Reminder set: '%s' → fires in %.0fs", reminder_message, trigger_at - _time.time())
             send_reminder_set_notification(reminder_message, trigger_at)
 
     # Step 3: save user message
@@ -207,12 +231,18 @@ def _thursday_stream(
 
         full_reply = "".join(collected_tokens)
         if full_reply:
-            # Also check AI response for [REMIND: ...] tags (fallback)
             _process_reminders(full_reply, conv_id)
-
-            # Save the clean reply (without reminder tags) to memory
             clean_reply = strip_reminder_tags(full_reply)
             memory.add_message("assistant", clean_reply, conv_id)
+
+        elapsed = _time.time() - t0
+        token_count = len(collected_tokens)
+        reply_chars = len(full_reply) if full_reply else 0
+        tps = token_count / elapsed if elapsed > 0 else 0
+        log.info(
+            "   ✓ Web response done — %d tokens, %d chars, %.1fs (%.1f tok/s)",
+            token_count, reply_chars, elapsed, tps,
+        )
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -223,10 +253,10 @@ def _process_reminders(full_reply: str, conversation_id: str | None) -> None:
     for full_match, time_expr, message in tags:
         trigger_at = parse_time_expression(time_expr)
         if trigger_at is None:
-            print(f"[Reminder] Could not parse time expression: '{time_expr}'")
+            log.warning("   Could not parse reminder time: '%s'", time_expr)
             continue
         reminder = reminders.add_reminder(message, trigger_at, conversation_id)
-        print(f"[Reminder] Created #{reminder.id}: '{message}' → fires at {trigger_at}")
+        log.info("   ⏰ Reminder #%d set: '%s'", reminder.id, message)
         send_reminder_set_notification(message, trigger_at)
 
 
@@ -364,8 +394,6 @@ async def delete_reminder(reminder_id: int):
 # WhatsApp webhook (Twilio) — uses full Thursday mode
 # ------------------------------------------------------------------
 
-_wa_log = logging.getLogger("thursday.whatsapp")
-
 # Dedicated conversation ID for WhatsApp — persists across messages
 _WHATSAPP_CONV_ID = "whatsapp-main"
 
@@ -399,65 +427,97 @@ def _twiml(body: str) -> Response:
 async def whatsapp_webhook(
     Body: str = Form(""),
     From: str = Form(""),
+    background_tasks: BackgroundTasks = None,
 ):
     """Receive a WhatsApp message via Twilio, run it through the full
-    Thursday pipeline (personality + memory + reminders), and reply."""
+    Thursday pipeline (personality + memory + reminders), and reply.
+
+    Returns an empty TwiML response immediately so Twilio never times
+    out.  The actual LLM reply is sent asynchronously via the Twilio
+    REST API (supports multi-part messages for long / code responses).
+    """
     sender = From.replace("whatsapp:", "")
     user_msg = Body.strip()
 
     if not user_msg:
         return _twiml("Send me a message and I'll respond!")
 
-    _wa_log.info("📩 %s: %s", sender, user_msg[:100])
+    log.info("── WhatsApp prompt from %s (%d chars): %s", sender, len(user_msg), user_msg[:80])
 
-    _ensure_whatsapp_conversation()
+    # Kick off the heavy work in the background so Twilio gets an
+    # immediate 200 and never hits its 15-second webhook timeout.
+    background_tasks.add_task(_process_whatsapp_message, user_msg, sender)
 
-    # -- Full Thursday pipeline (same as web UI) --
-
-    # 1. Extract long-term facts
-    memory.try_extract_fact(user_msg)
-
-    # 2. Detect reminder intent
-    reminder_result = try_parse_user_reminder(user_msg)
-    reminder_created = None
-    if reminder_result:
-        time_expr, reminder_message = reminder_result
-        trigger_at = parse_time_expression(time_expr)
-        if trigger_at:
-            reminder_created = reminders.add_reminder(
-                reminder_message, trigger_at, _WHATSAPP_CONV_ID
-            )
-            _wa_log.info(
-                "[Reminder] Created #%d: '%s' → fires in %.0fs",
-                reminder_created.id, reminder_message,
-                trigger_at - __import__("time").time(),
-            )
-            send_reminder_set_notification(reminder_message, trigger_at)
-
-    # 3. Save user message to memory
-    memory.add_message("user", user_msg, _WHATSAPP_CONV_ID)
-
-    # 4. Build augmented messages (personality + facts + history + reminders)
-    augmented = _build_thursday_messages(
-        _WHATSAPP_CONV_ID, reminder_just_set=reminder_created
+    # Empty TwiML — the real reply comes via REST API
+    return Response(
+        content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+        media_type="application/xml",
     )
 
-    # 5. Get blocking (non-streaming) response
-    reply = llama.blocking_chat(augmented, temperature=0.7, max_tokens=300)
 
-    # 6. Process any [REMIND:] tags in the reply
-    _process_reminders(reply, _WHATSAPP_CONV_ID)
-    clean_reply = strip_reminder_tags(reply)
+def _process_whatsapp_message(user_msg: str, sender: str) -> None:
+    """Run the full Thursday pipeline for a WhatsApp message.
 
-    # 7. Save assistant reply to memory
-    memory.add_message("assistant", clean_reply, _WHATSAPP_CONV_ID)
+    Called as a FastAPI BackgroundTask so the webhook can return
+    instantly.  The reply is delivered via the Twilio REST API.
+    """
+    from notifier import send_whatsapp_long, send_whatsapp
 
-    # Twilio WhatsApp limit: 1600 chars
-    if len(clean_reply) > 1500:
-        clean_reply = clean_reply[:1497] + "..."
+    t0 = _time.time()
+    try:
+        _ensure_whatsapp_conversation()
 
-    _wa_log.info("📤 Reply (%d chars): %s", len(clean_reply), clean_reply[:100])
-    return _twiml(clean_reply)
+        # 1. Extract long-term facts
+        memory.try_extract_fact(user_msg)
+
+        # 2. Detect reminder intent
+        reminder_result = try_parse_user_reminder(user_msg)
+        reminder_created = None
+        if reminder_result:
+            time_expr, reminder_message = reminder_result
+            trigger_at = parse_time_expression(time_expr)
+            if trigger_at:
+                reminder_created = reminders.add_reminder(
+                    reminder_message, trigger_at, _WHATSAPP_CONV_ID
+                )
+                log.info("   ⏰ Reminder set: '%s' → fires in %.0fs", reminder_message, trigger_at - _time.time())
+                send_reminder_set_notification(reminder_message, trigger_at)
+
+        # 3. Save user message to memory
+        memory.add_message("user", user_msg, _WHATSAPP_CONV_ID)
+
+        # 4. Build augmented messages (personality + facts + history + reminders)
+        augmented = _build_thursday_messages(
+            _WHATSAPP_CONV_ID, reminder_just_set=reminder_created
+        )
+
+        # 5. Get blocking (non-streaming) response
+        log.info("   Generating response...")
+        reply = llama.blocking_chat(augmented, temperature=0.7, max_tokens=1024)
+
+        # 6. Process any [REMIND:] tags in the reply
+        _process_reminders(reply, _WHATSAPP_CONV_ID)
+        clean_reply = strip_reminder_tags(reply)
+
+        # 7. Save assistant reply to memory
+        memory.add_message("assistant", clean_reply, _WHATSAPP_CONV_ID)
+
+        elapsed = _time.time() - t0
+        log.info(
+            "   ✓ WhatsApp response done — %d chars, %.1fs",
+            len(clean_reply), elapsed,
+        )
+
+        # 8. Send via Twilio REST API (auto-splits long messages)
+        send_whatsapp_long(clean_reply)
+        log.info("   ✓ Delivered to WhatsApp")
+
+    except Exception as exc:
+        log.error("   ✗ WhatsApp processing failed: %s", exc, exc_info=True)
+        try:
+            send_whatsapp("⚠️ Sorry, something went wrong. Try again in a moment.")
+        except Exception:
+            log.error("   ✗ Failed to send error message to WhatsApp")
 
 
 # ------------------------------------------------------------------
