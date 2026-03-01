@@ -20,6 +20,10 @@ venv/
 llama.cpp/build/
 llama.cpp/models/*.gguf
 
+# ── Scraper output ──
+scraper/results_raw.*
+scraper/college.db
+
 # ── OS / IDE ──
 .DS_Store
 Thumbs.db

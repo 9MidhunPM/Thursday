@@ -51,6 +51,7 @@ from reminder import (
     get_current_time_string,
     try_parse_user_reminder,
 )
+from college import background_refresh as college_refresh, get_college_context
 
 
 # ------------------------------------------------------------------
@@ -116,6 +117,10 @@ async def lifespan(app: FastAPI):
 
     _reminder_task = asyncio.create_task(_reminder_check_loop())
     log.info("✓  Reminder checker started (every %ds)", REMINDER_CHECK_INTERVAL)
+
+    # Kick off college data refresh in background thread
+    college_refresh()
+    log.info("✓  College data refresh triggered (background)")
 
     yield
 
@@ -280,6 +285,11 @@ def _build_thursday_messages(
     facts_block = memory.get_facts_block()
     if facts_block:
         system_parts.append(facts_block)
+
+    # 3b. College data (marks, attendance, timetable)
+    college_ctx = get_college_context()
+    if college_ctx:
+        system_parts.append(college_ctx)
 
     # 4. Active reminders
     active = reminders.list_active()
